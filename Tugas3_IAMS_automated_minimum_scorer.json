@@ -1,0 +1,281 @@
+{
+  "name": "Tugas 3 - Automated Minimum Scorer for Candidates",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1Da_HC6VKyCmyUEXGJt51bHlRWWuZyMOB",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "586888f0-2cb5-4a49-99f5-8974edffa093",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "32tMxDPmXtJY4mX7",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "ec33760f-c20b-4cc2-87db-82ed04db85f2",
+      "name": "Download CV (PDF)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "32tMxDPmXtJY4mX7",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "dd96c786-23ef-4c89-9a2d-6e1ab3a44db0",
+      "name": "Extract PDF to Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let html = $json.body || $json.data || $json.html || $json.text || \"\";\n\n// 1. Hapus script, style, metadata\nhtml = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<meta[\\s\\S]*?>/gi, '')\n  .replace(/<head[\\s\\S]*?<\\/head>/gi, '');\n\n// 2. <li> jadi bullet \"-\"\nhtml = html\n  .replace(/<li[^>]*>/gi, '\\n- ')\n  .replace(/<\\/li>/gi, '');\n\n// 3. Paragraf & break jadi newline\nhtml = html\n  .replace(/<\\/p>/gi, '\\n')\n  .replace(/<br\\s*\\/?>/gi, '\\n')\n  .replace(/<\\/div>/gi, '\\n');\n\n// 4. Hapus semua tag HTML lain\nhtml = html.replace(/<[^>]+>/g, ' ');\n\n// 5. Hapus nomor halaman\nhtml = html.replace(/Page \\d+ of \\d+/gi, '');\nhtml = html.replace(/\\bPage\\s*\\d+\\b/gi, '');\nhtml = html.replace(/^\\s*\\d+\\s*$/gm, '');\n\n// 6. Hapus footer umum, beri jarak pada judul CV\nhtml = html.replace(/\\b(Curriculum Vitae|Resume|CV)\\b/gi, (m) => `\\n${m}\\n`);\nhtml = html.replace(/©.*\\n/gi, '');\nhtml = html.replace(/All rights reserved.*/gi, '');\n\n// 7. Decode HTML entities\nhtml = html\n  .replace(/&nbsp;/g, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\");\n\n// 8. Rapikan spasi & baris\nhtml = html\n  .replace(/\\n\\s*\\n\\s*\\n+/g, '\\n\\n')\n  .replace(/[ \\t]+/g, ' ')\n  .replace(/\\s+\\n/g, '\\n')\n  .replace(/\\n\\s+/g, '\\n')\n  .trim();\n\nreturn [{ json: { clean_text: html } }];"
+      },
+      "id": "1f4d3936-aae7-449a-b4a6-6ce2833d9acd",
+      "name": "Clean HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Anda adalah Penganalisis CV yang ahli dalam merekrut Tenaga Pengajar IT (Instruktur/Trainer).\n\nAnalisis teks di bawah dan hasilkan HANYA output JSON (tanpa teks lain, tanpa ```) dengan struktur yang SAMA PERSIS seperti ini:\n\n{\n  \"candidate_name\": \"\",\n  \"it_keywords\": [],\n  \"teaching_keywords\": [],\n  \"category\": {\n    \"devops\": [],\n    \"backend\": [],\n    \"frontend\": [],\n    \"cybersecurity\": [],\n    \"cloud\": [],\n    \"networking\": []\n  },\n  \"it_difficulty_score\": \"\",\n  \"teaching_score\": \"\",\n  \"summary\": \"\"\n}\n\nAturan Wajib:\n- \"candidate_name\": Nama lengkap kandidat sesuai CV. Jika tidak ditemukan, isi \"\".\n- \"it_keywords\": Maksimal 10 istilah teknis IT terkuat (cth: \"Python\", \"Kubernetes\").\n- \"teaching_keywords\": Maksimal 5 istilah terkait mengajar (cth: \"mengajar\", \"dosen\", \"trainer\", \"pelatihan\", \"instruktur\").\n- \"category\": Isi kategori IT berdasarkan \"it_keywords\" atau pengalaman kerja.\n- \"it_difficulty_score\": Skor angka 1-10 untuk kompleksitas teknis IT kandidat.\n- \"teaching_score\": Skor angka 1-10 untuk pengalaman mengajar/melatih kandidat.\n- \"summary\": Ringkasan 2 kalimat yang menggabungkan kemampuan teknis DAN pengalaman mengajarnya.\n- Jika tidak ada data untuk sebuah array, gunakan array kosong []. Jangan menebak.\n\nSekarang analisis teks ini:\n\n{{ $json.clean_text }}\n\nOutput harus menggunakan Bahasa Indonesia."
+      },
+      "id": "c04c9fdf-9dd4-4567-96de-21b4303a6b20",
+      "name": "Scoring Kandidat",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "2ca6d516-da13-4f4b-8d8e-ed0a2cb0be8f",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1008,
+        224
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "v3yn8imcq9Tsoh3l",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Ambil teks mentah dari Gemini\nconst rawText = $json.text || $json.output || \"\";\n\n// 2. Temukan blok JSON (abaikan pembungkus ```json)\nconst jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\nif (!jsonMatch) {\n  throw new Error(\"Tidak dapat menemukan JSON dalam output AI.\");\n}\n\n// 3. Parse menjadi objek\ntry {\n  return [{ json: JSON.parse(jsonMatch[0]) }];\n} catch (error) {\n  throw new Error(\"Gagal mem-parsing JSON: \" + error.message);\n}"
+      },
+      "id": "4f052f37-9eee-49ab-9096-d7d1b115011f",
+      "name": "Parse JSON from AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\nconst MIN_SCORE = 6; // <-- ubah batas minimum skor di sini\n\nconst safeArray = (x) => Array.isArray(x) && x.length > 0 ? x.join(\", \") : \"-\";\nconst esc = (s) => String(s ?? \"-\").replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\n\nconst cat = data.category || {};\nconst itScore = Number(data.it_difficulty_score) || 0;\nconst teachScore = Number(data.teaching_score) || 0;\nconst lolos = itScore >= MIN_SCORE && teachScore >= MIN_SCORE;\n\nlet fileName = \"-\";\ntry { fileName = $('Google Drive Trigger').first().json.name || \"-\"; } catch (e) {}\nconst nama = data.candidate_name && data.candidate_name !== \"\" ? data.candidate_name : fileName;\n\nconst msg = `👤 <b>Kandidat:</b> ${esc(nama)}\n📄 <b>File:</b> ${esc(fileName)}\n\n📌 <b>Keyword IT</b>\n${esc(safeArray(data.it_keywords))}\n\n🎓 <b>Keyword Mengajar</b>\n${esc(safeArray(data.teaching_keywords))}\n\n📂 <b>Kategori</b>\nDevOps: ${esc(safeArray(cat.devops))}\nBackend: ${esc(safeArray(cat.backend))}\nFrontend: ${esc(safeArray(cat.frontend))}\nSecurity: ${esc(safeArray(cat.cybersecurity || cat.security))}\nCloud: ${esc(safeArray(cat.cloud))}\nNetworking: ${esc(safeArray(cat.networking))}\n\n⭐ <b>Skor Teknis IT:</b> ${itScore || \"-\"} / 10\n⭐ <b>Skor Mengajar:</b> ${teachScore || \"-\"} / 10\n${lolos ? \"✅\" : \"❌\"} <b>Status (min. ${MIN_SCORE}):</b> ${lolos ? \"LOLOS seleksi awal\" : \"Di bawah batas minimum\"}\n\n📝 <b>Ringkasan:</b>\n${esc(data.summary)}`;\n\nreturn [{ json: { telegram_text: msg } }];"
+      },
+      "id": "705448fe-222d-4a87-a3eb-ec64baafa0ec",
+      "name": "Format Output untuk Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "7391328305",
+        "text": "={{ $json.telegram_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "76184384-2a0f-433d-afc7-943065f60636",
+      "name": "Send a text message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        0
+      ],
+      "webhookId": "ba19a6da-a7b0-464d-bb8b-20c96686bb1d",
+      "credentials": {
+        "telegramApi": {
+          "id": "x4DYvjKMmwyKB2S3",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download CV (PDF)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download CV (PDF)": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF to Text": {
+      "main": [
+        [
+          {
+            "node": "Clean HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean HTML": {
+      "main": [
+        [
+          {
+            "node": "Scoring Kandidat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Scoring Kandidat",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scoring Kandidat": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON from AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON from AI": {
+      "main": [
+        [
+          {
+            "node": "Format Output untuk Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output untuk Telegram": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ac63a365-7c1b-4aa4-963b-5c18613f3889",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dc96f10ae7dc95d3c138575ba243a0a167923dbcb524841d451aadf9135d5fb3"
+  },
+  "nodeGroups": [],
+  "id": "lG1vZ3rreTpXaDcr",
+  "tags": []
+}
